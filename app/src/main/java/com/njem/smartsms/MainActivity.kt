@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat
 import com.njem.smartsms.data.SmsRepository
 import com.njem.smartsms.data.model.SmsCategory
 import com.njem.smartsms.data.model.SmsMessage
+import com.njem.smartsms.ui.screens.SearchScreen
 import com.njem.smartsms.ui.screens.SettingsScreen
 import com.njem.smartsms.ui.screens.StatsScreen
 import com.njem.smartsms.ui.theme.*
@@ -48,11 +49,7 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         if (notGranted.isNotEmpty()) requestPermissions.launch(notGranted.toTypedArray())
-        setContent {
-            SmartSmsTheme {
-                SmartSmsApp()
-            }
-        }
+        setContent { SmartSmsTheme { SmartSmsApp() } }
     }
 }
 
@@ -62,6 +59,7 @@ fun SmartSmsApp() {
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
     var selectedScreen by remember { mutableStateOf(0) }
+    var showSearch by remember { mutableStateOf(false) }
     val tabs = listOf("All", "Personal", "Bank", "OTP", "Ads", "Spam")
     var messages by remember { mutableStateOf<List<SmsMessage>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -71,22 +69,23 @@ fun SmartSmsApp() {
         val hasSmsPermission = ContextCompat.checkSelfPermission(
             context, Manifest.permission.READ_SMS
         ) == PackageManager.PERMISSION_GRANTED
-        messages = if (hasSmsPermission) {
-            repo.getAllSms()
-        } else {
-            listOf(
-                SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa. Akaunti yako: TZS 234,500", System.currentTimeMillis(), false, SmsCategory.BANK),
-                SmsMessage(2, "AIRTEL", "Nambari yako ya uthibitisho ni 847291.", System.currentTimeMillis() - 3600000, true, SmsCategory.OTP),
-                SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi leo jioni?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL),
-                SmsMessage(4, "VODACOM", "Pata 50% punguzo la data! Jiunge sasa.", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
-                SmsMessage(5, "UNKNOWN", "Umeshinda zawadi! Tuma nambari yako sasa.", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
-            )
-        }
+        messages = if (hasSmsPermission) repo.getAllSms() else listOf(
+            SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa. Akaunti yako: TZS 234,500", System.currentTimeMillis(), false, SmsCategory.BANK),
+            SmsMessage(2, "AIRTEL", "Nambari yako ya uthibitisho ni 847291.", System.currentTimeMillis() - 3600000, true, SmsCategory.OTP),
+            SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi leo jioni?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL),
+            SmsMessage(4, "VODACOM", "Pata 50% punguzo la data! Jiunge sasa.", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
+            SmsMessage(5, "UNKNOWN", "Umeshinda zawadi! Tuma nambari yako sasa.", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
+        )
         isLoading = false
     }
 
+    if (showSearch) {
+        SearchScreen(messages) { showSearch = false }
+        return
+    }
+
     Scaffold(
-        topBar = { SmartTopBar() },
+        topBar = { SmartTopBar { showSearch = true } },
         bottomBar = { SmartBottomBar(selectedScreen) { selectedScreen = it } },
         floatingActionButton = { if (selectedScreen == 0) SmartFAB() },
         containerColor = BackgroundDark
@@ -102,7 +101,7 @@ fun SmartSmsApp() {
 }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SmartTopBar() {
+fun SmartTopBar(onSearchClick: () -> Unit) {
     TopAppBar(
         title = {
             Column {
@@ -111,8 +110,12 @@ fun SmartTopBar() {
             }
         },
         actions = {
-            IconButton(onClick = {}) { Icon(Icons.Default.Search, contentDescription = "Search", tint = TextPrimary) }
-            IconButton(onClick = {}) { Icon(Icons.Default.MoreVert, contentDescription = "More", tint = TextPrimary) }
+            IconButton(onClick = onSearchClick) {
+                Icon(Icons.Default.Search, contentDescription = "Search", tint = TextPrimary)
+            }
+            IconButton(onClick = {}) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = TextPrimary)
+            }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceDark)
     )
