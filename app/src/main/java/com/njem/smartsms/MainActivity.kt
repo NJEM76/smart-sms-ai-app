@@ -16,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -82,7 +81,7 @@ fun SmartTopBar() {
                     fontSize = 20.sp
                 )
                 Text(
-                    "Powered by AI • Offline",
+                    "by NJEM MABULA",
                     color = SecondaryColor,
                     fontSize = 11.sp
                 )
@@ -221,9 +220,7 @@ fun MessageCard(message: SmsMessage) {
                     fontSize = 18.sp
                 )
             }
-
             Spacer(modifier = Modifier.width(12.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
