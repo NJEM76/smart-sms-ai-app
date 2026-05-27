@@ -28,32 +28,26 @@ import androidx.core.content.ContextCompat
 import com.njem.smartsms.data.SmsRepository
 import com.njem.smartsms.data.model.SmsCategory
 import com.njem.smartsms.data.model.SmsMessage
+import com.njem.smartsms.ui.screens.SettingsScreen
+import com.njem.smartsms.ui.screens.StatsScreen
 import com.njem.smartsms.ui.theme.*
-
 class MainActivity : ComponentActivity() {
-
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         val permissions = arrayOf(
             Manifest.permission.READ_SMS,
             Manifest.permission.RECEIVE_SMS,
             Manifest.permission.SEND_SMS,
             Manifest.permission.READ_CONTACTS
         )
-
         val notGranted = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-
-        if (notGranted.isNotEmpty()) {
-            requestPermissions.launch(notGranted.toTypedArray())
-        }
-
+        if (notGranted.isNotEmpty()) requestPermissions.launch(notGranted.toTypedArray())
         setContent {
             SmartSmsTheme {
                 SmartSmsApp()
@@ -67,6 +61,7 @@ class MainActivity : ComponentActivity() {
 fun SmartSmsApp() {
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
+    var selectedScreen by remember { mutableStateOf(0) }
     val tabs = listOf("All", "Personal", "Bank", "OTP", "Ads", "Spam")
     var messages by remember { mutableStateOf<List<SmsMessage>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -76,7 +71,6 @@ fun SmartSmsApp() {
         val hasSmsPermission = ContextCompat.checkSelfPermission(
             context, Manifest.permission.READ_SMS
         ) == PackageManager.PERMISSION_GRANTED
-
         messages = if (hasSmsPermission) {
             repo.getAllSms()
         } else {
@@ -93,82 +87,60 @@ fun SmartSmsApp() {
 
     Scaffold(
         topBar = { SmartTopBar() },
-        bottomBar = { SmartBottomBar() },
-        floatingActionButton = { SmartFAB() },
+        bottomBar = { SmartBottomBar(selectedScreen) { selectedScreen = it } },
+        floatingActionButton = { if (selectedScreen == 0) SmartFAB() },
         containerColor = BackgroundDark
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(BackgroundDark)
-        ) {
-            CategoryTabs(tabs, selectedTab) { selectedTab = it }
-            StatsRow(messages)
-            if (isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = PrimaryColor)
-                }
-            } else {
-                MessagesList(messages, selectedTab)
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            when (selectedScreen) {
+                0 -> MessagesScreen(messages, isLoading, selectedTab, tabs) { selectedTab = it }
+                1 -> StatsScreen(messages)
+                2 -> SettingsScreen()
             }
         }
     }
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmartTopBar() {
     TopAppBar(
         title = {
             Column {
-                Text(
-                    "Smart SMS AI",
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
-                Text(
-                    "by NJEM MABULA",
-                    color = SecondaryColor,
-                    fontSize = 11.sp
-                )
+                Text("Smart SMS AI", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("by NJEM MABULA", color = SecondaryColor, fontSize = 11.sp)
             }
         },
         actions = {
-            IconButton(onClick = {}) {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = TextPrimary)
-            }
-            IconButton(onClick = {}) {
-                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = TextPrimary)
-            }
+            IconButton(onClick = {}) { Icon(Icons.Default.Search, contentDescription = "Search", tint = TextPrimary) }
+            IconButton(onClick = {}) { Icon(Icons.Default.MoreVert, contentDescription = "More", tint = TextPrimary) }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceDark)
     )
 }
 
 @Composable
+fun MessagesScreen(messages: List<SmsMessage>, isLoading: Boolean, selectedTab: Int, tabs: List<String>, onTabSelect: (Int) -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().background(BackgroundDark)) {
+        CategoryTabs(tabs, selectedTab, onTabSelect)
+        StatsRow(messages)
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = PrimaryColor)
+            }
+        } else {
+            MessagesList(messages, selectedTab)
+        }
+    }
+}
+
+@Composable
 fun CategoryTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    ScrollableTabRow(
-        selectedTabIndex = selected,
-        containerColor = SurfaceDark,
-        contentColor = PrimaryColor,
-        edgePadding = 8.dp
-    ) {
+    ScrollableTabRow(selectedTabIndex = selected, containerColor = SurfaceDark, contentColor = PrimaryColor, edgePadding = 8.dp) {
         tabs.forEachIndexed { index, tab ->
             Tab(
                 selected = selected == index,
                 onClick = { onSelect(index) },
-                text = {
-                    Text(
-                        tab,
-                        color = if (selected == index) PrimaryColor else TextSecondary,
-                        fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
+                text = { Text(tab, color = if (selected == index) PrimaryColor else TextSecondary, fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal) }
             )
         }
     }
@@ -176,12 +148,7 @@ fun CategoryTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
 
 @Composable
 fun StatsRow(messages: List<SmsMessage>) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         StatCard("Total", messages.size.toString(), PrimaryColor, Modifier.weight(1f))
         StatCard("Spam", messages.count { it.category == SmsCategory.SPAM }.toString(), SpamColor, Modifier.weight(1f))
         StatCard("Bank", messages.count { it.category == SmsCategory.BANK }.toString(), BankColor, Modifier.weight(1f))
@@ -191,21 +158,13 @@ fun StatsRow(messages: List<SmsMessage>) {
 
 @Composable
 fun StatCard(label: String, value: String, color: Color, modifier: Modifier) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardDark)
-    ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+    Card(modifier = modifier, shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardDark)) {
+        Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(value, color = color, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Text(label, color = TextSecondary, fontSize = 10.sp)
         }
     }
 }
-
 @Composable
 fun MessagesList(messages: List<SmsMessage>, selectedTab: Int) {
     val filtered = when (selectedTab) {
@@ -217,15 +176,8 @@ fun MessagesList(messages: List<SmsMessage>, selectedTab: Int) {
         5 -> messages.filter { it.category == SmsCategory.SPAM }
         else -> messages
     }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(filtered) { message ->
-            MessageCard(message)
-        }
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(filtered) { message -> MessageCard(message) }
     }
 }
 
@@ -238,7 +190,6 @@ fun MessageCard(message: SmsMessage) {
         SmsCategory.ADS -> AdsColor
         SmsCategory.PERSONAL -> PersonalColor
     }
-
     val categoryLabel = when (message.category) {
         SmsCategory.BANK -> "💰 Bank"
         SmsCategory.OTP -> "🔑 OTP"
@@ -246,114 +197,53 @@ fun MessageCard(message: SmsMessage) {
         SmsCategory.ADS -> "📢 Ads"
         SmsCategory.PERSONAL -> "👤 Personal"
     }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardDark)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(categoryColor.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    message.address.take(1).uppercase(),
-                    color = categoryColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = CardDark)) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(categoryColor.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
+                Text(message.address.take(1).uppercase(), color = categoryColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        message.address,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        maxLines = 1
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = categoryColor.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            categoryLabel,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            color = categoryColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(message.address, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1)
+                    Surface(shape = RoundedCornerShape(8.dp), color = categoryColor.copy(alpha = 0.15f)) {
+                        Text(categoryLabel, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), color = categoryColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    message.body,
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    maxLines = 2
-                )
+                Text(message.body, color = TextSecondary, fontSize = 12.sp, maxLines = 2)
             }
         }
     }
 }
 
 @Composable
-fun SmartBottomBar() {
+fun SmartBottomBar(selected: Int, onSelect: (Int) -> Unit) {
     NavigationBar(containerColor = SurfaceDark) {
         NavigationBarItem(
-            selected = true,
-            onClick = {},
+            selected = selected == 0, onClick = { onSelect(0) },
             icon = { Icon(Icons.Default.Message, contentDescription = "Messages") },
             label = { Text("Messages") },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = PrimaryColor,
-                selectedTextColor = PrimaryColor,
-                unselectedIconColor = TextSecondary
-            )
+            colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary)
         )
         NavigationBarItem(
-            selected = false,
-            onClick = {},
+            selected = selected == 1, onClick = { onSelect(1) },
             icon = { Icon(Icons.Default.BarChart, contentDescription = "Stats") },
             label = { Text("Stats") },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = PrimaryColor,
-                selectedTextColor = PrimaryColor,
-                unselectedIconColor = TextSecondary
-            )
+            colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary)
         )
         NavigationBarItem(
-            selected = false,
-            onClick = {},
+            selected = selected == 2, onClick = { onSelect(2) },
             icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
             label = { Text("Settings") },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = PrimaryColor,
-                selectedTextColor = PrimaryColor,
-                unselectedIconColor = TextSecondary
-            )
+            colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary)
         )
     }
 }
 
 @Composable
 fun SmartFAB() {
-    FloatingActionButton(
-        onClick = {},
-        containerColor = PrimaryColor,
-        shape = CircleShape
-    ) {
+    FloatingActionButton(onClick = {}, containerColor = PrimaryColor, shape = CircleShape) {
         Icon(Icons.Default.Edit, contentDescription = "New SMS", tint = Color.White)
     }
 }
