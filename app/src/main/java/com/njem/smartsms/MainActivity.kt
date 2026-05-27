@@ -2,6 +2,7 @@ package com.njem.smartsms
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,6 +29,7 @@ import androidx.core.content.ContextCompat
 import com.njem.smartsms.data.SmsRepository
 import com.njem.smartsms.data.model.SmsCategory
 import com.njem.smartsms.data.model.SmsMessage
+import com.njem.smartsms.ui.screens.ComposeSmsScreen
 import com.njem.smartsms.ui.screens.SearchScreen
 import com.njem.smartsms.ui.screens.SettingsScreen
 import com.njem.smartsms.ui.screens.StatsScreen
@@ -39,12 +41,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val permissions = arrayOf(
+        val permissions = mutableListOf(
             Manifest.permission.READ_SMS,
             Manifest.permission.RECEIVE_SMS,
             Manifest.permission.SEND_SMS,
             Manifest.permission.READ_CONTACTS
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
         val notGranted = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -60,6 +65,7 @@ fun SmartSmsApp() {
     var selectedTab by remember { mutableStateOf(0) }
     var selectedScreen by remember { mutableStateOf(0) }
     var showSearch by remember { mutableStateOf(false) }
+    var showCompose by remember { mutableStateOf(false) }
     val tabs = listOf("All", "Personal", "Bank", "OTP", "Ads", "Spam")
     var messages by remember { mutableStateOf<List<SmsMessage>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -73,21 +79,31 @@ fun SmartSmsApp() {
             SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa. Akaunti yako: TZS 234,500", System.currentTimeMillis(), false, SmsCategory.BANK),
             SmsMessage(2, "AIRTEL", "Nambari yako ya uthibitisho ni 847291.", System.currentTimeMillis() - 3600000, true, SmsCategory.OTP),
             SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi leo jioni?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL),
-            SmsMessage(4, "VODACOM", "Pata 50% punguzo la data! Jiunge sasa.", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
-            SmsMessage(5, "UNKNOWN", "Umeshinda zawadi! Tuma nambari yako sasa.", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
+            SmsMessage(4, "VODACOM", "Pata 50% punguzo la data!", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
+            SmsMessage(5, "UNKNOWN", "Umeshinda zawadi! Tuma nambari yako.", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
         )
         isLoading = false
     }
 
-    if (showSearch) {
-        SearchScreen(messages) { showSearch = false }
-        return
+    when {
+        showSearch -> { SearchScreen(messages) { showSearch = false }; return }
+        showCompose -> { ComposeSmsScreen { showCompose = false }; return }
     }
 
     Scaffold(
         topBar = { SmartTopBar { showSearch = true } },
         bottomBar = { SmartBottomBar(selectedScreen) { selectedScreen = it } },
-        floatingActionButton = { if (selectedScreen == 0) SmartFAB() },
+        floatingActionButton = {
+            if (selectedScreen == 0) {
+                FloatingActionButton(
+                    onClick = { showCompose = true },
+                    containerColor = PrimaryColor,
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "New SMS", tint = Color.White)
+                }
+            }
+        },
         containerColor = BackgroundDark
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -168,6 +184,7 @@ fun StatCard(label: String, value: String, color: Color, modifier: Modifier) {
         }
     }
 }
+
 @Composable
 fun MessagesList(messages: List<SmsMessage>, selectedTab: Int) {
     val filtered = when (selectedTab) {
@@ -241,12 +258,5 @@ fun SmartBottomBar(selected: Int, onSelect: (Int) -> Unit) {
             label = { Text("Settings") },
             colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary)
         )
-    }
-}
-
-@Composable
-fun SmartFAB() {
-    FloatingActionButton(onClick = {}, containerColor = PrimaryColor, shape = CircleShape) {
-        Icon(Icons.Default.Edit, contentDescription = "New SMS", tint = Color.White)
     }
 }
