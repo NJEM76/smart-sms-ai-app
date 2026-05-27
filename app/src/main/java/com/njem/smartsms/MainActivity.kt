@@ -1,8 +1,11 @@
 package com.njem.smartsms
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,16 +20,40 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.njem.smartsms.data.SmsRepository
 import com.njem.smartsms.data.model.SmsCategory
 import com.njem.smartsms.data.model.SmsMessage
 import com.njem.smartsms.ui.theme.*
 
 class MainActivity : ComponentActivity() {
+
+    private val requestPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val permissions = arrayOf(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_CONTACTS
+        )
+
+        val notGranted = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (notGranted.isNotEmpty()) {
+            requestPermissions.launch(notGranted.toTypedArray())
+        }
+
         setContent {
             SmartSmsTheme {
                 SmartSmsApp()
@@ -38,16 +65,31 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmartSmsApp() {
+    val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("All", "Personal", "Bank", "OTP", "Spam")
+    val tabs = listOf("All", "Personal", "Bank", "OTP", "Ads", "Spam")
+    var messages by remember { mutableStateOf<List<SmsMessage>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
 
-    val sampleMessages = listOf(
-        SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa. Akaunti yako: TZS 234,500", System.currentTimeMillis(), false, SmsCategory.BANK),
-        SmsMessage(2, "AIRTEL", "Nambari yako ya uthibitisho ni 847291. Usiishirikishe na mtu.", System.currentTimeMillis() - 3600000, true, SmsCategory.OTP),
-        SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi leo jioni?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL),
-        SmsMessage(4, "VODACOM", "Pata 50% punguzo la data! Jiunge sasa. Bonyeza hapa.", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
-        SmsMessage(5, "UNKNOWN", "Umeshinda zawadi! Tuma nambari yako sasa kupata TZS 1,000,000!", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
-    )
+    LaunchedEffect(Unit) {
+        val repo = SmsRepository(context)
+        val hasSmsPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.READ_SMS
+        ) == PackageManager.PERMISSION_GRANTED
+
+        messages = if (hasSmsPermission) {
+            repo.getAllSms()
+        } else {
+            listOf(
+                SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa. Akaunti yako: TZS 234,500", System.currentTimeMillis(), false, SmsCategory.BANK),
+                SmsMessage(2, "AIRTEL", "Nambari yako ya uthibitisho ni 847291.", System.currentTimeMillis() - 3600000, true, SmsCategory.OTP),
+                SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi leo jioni?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL),
+                SmsMessage(4, "VODACOM", "Pata 50% punguzo la data! Jiunge sasa.", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
+                SmsMessage(5, "UNKNOWN", "Umeshinda zawadi! Tuma nambari yako sasa.", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
+            )
+        }
+        isLoading = false
+    }
 
     Scaffold(
         topBar = { SmartTopBar() },
@@ -62,8 +104,17 @@ fun SmartSmsApp() {
                 .background(BackgroundDark)
         ) {
             CategoryTabs(tabs, selectedTab) { selectedTab = it }
-            StatsRow(sampleMessages)
-            MessagesList(sampleMessages, selectedTab, tabs)
+            StatsRow(messages)
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = PrimaryColor)
+                }
+            } else {
+                MessagesList(messages, selectedTab)
+            }
         }
     }
 }
@@ -95,9 +146,7 @@ fun SmartTopBar() {
                 Icon(Icons.Default.MoreVert, contentDescription = "More", tint = TextPrimary)
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = SurfaceDark
-        )
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceDark)
     )
 }
 
@@ -158,13 +207,14 @@ fun StatCard(label: String, value: String, color: Color, modifier: Modifier) {
 }
 
 @Composable
-fun MessagesList(messages: List<SmsMessage>, selectedTab: Int, tabs: List<String>) {
+fun MessagesList(messages: List<SmsMessage>, selectedTab: Int) {
     val filtered = when (selectedTab) {
         0 -> messages
         1 -> messages.filter { it.category == SmsCategory.PERSONAL }
         2 -> messages.filter { it.category == SmsCategory.BANK }
         3 -> messages.filter { it.category == SmsCategory.OTP }
-        4 -> messages.filter { it.category == SmsCategory.SPAM }
+        4 -> messages.filter { it.category == SmsCategory.ADS }
+        5 -> messages.filter { it.category == SmsCategory.SPAM }
         else -> messages
     }
 
@@ -230,7 +280,8 @@ fun MessageCard(message: SmsMessage) {
                         message.address,
                         color = TextPrimary,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        maxLines = 1
                     )
                     Surface(
                         shape = RoundedCornerShape(8.dp),
