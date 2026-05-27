@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,8 +33,11 @@ import com.njem.smartsms.data.model.SmsMessage
 import com.njem.smartsms.ui.screens.ComposeSmsScreen
 import com.njem.smartsms.ui.screens.SearchScreen
 import com.njem.smartsms.ui.screens.SettingsScreen
+import com.njem.smartsms.ui.screens.SmsDetailScreen
 import com.njem.smartsms.ui.screens.StatsScreen
 import com.njem.smartsms.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -66,28 +70,53 @@ fun SmartSmsApp() {
     var selectedScreen by remember { mutableStateOf(0) }
     var showSearch by remember { mutableStateOf(false) }
     var showCompose by remember { mutableStateOf(false) }
+    var composeRecipient by remember { mutableStateOf("") }
+    var selectedMessage by remember { mutableStateOf<SmsMessage?>(null) }
     val tabs = listOf("All", "Personal", "Bank", "OTP", "Ads", "Spam")
     var messages by remember { mutableStateOf<List<SmsMessage>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        val repo = SmsRepository(context)
-        val hasSmsPermission = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.READ_SMS
-        ) == PackageManager.PERMISSION_GRANTED
-        messages = if (hasSmsPermission) repo.getAllSms() else listOf(
-            SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa. Akaunti yako: TZS 234,500", System.currentTimeMillis(), false, SmsCategory.BANK),
-            SmsMessage(2, "AIRTEL", "Nambari yako ya uthibitisho ni 847291.", System.currentTimeMillis() - 3600000, true, SmsCategory.OTP),
-            SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi leo jioni?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL),
-            SmsMessage(4, "VODACOM", "Pata 50% punguzo la data!", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
-            SmsMessage(5, "UNKNOWN", "Umeshinda zawadi! Tuma nambari yako.", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
-        )
-        isLoading = false
+        withContext(Dispatchers.IO) {
+            val repo = SmsRepository(context)
+            val hasSmsPermission = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.READ_SMS
+            ) == PackageManager.PERMISSION_GRANTED
+            val loaded = if (hasSmsPermission) repo.getAllSms() else listOf(
+                SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa. Akaunti yako: TZS 234,500", System.currentTimeMillis(), false, SmsCategory.BANK),
+                SmsMessage(2, "AIRTEL", "Nambari yako ya uthibitisho ni 847291.", System.currentTimeMillis() - 3600000, true, SmsCategory.OTP),
+                SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi leo jioni?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL),
+                SmsMessage(4, "VODACOM", "Pata 50% punguzo la data!", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
+                SmsMessage(5, "UNKNOWN", "Umeshinda zawadi!", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
+            )
+            withContext(Dispatchers.Main) {
+                messages = loaded
+                isLoading = false
+            }
+        }
     }
 
     when {
+        selectedMessage != null -> {
+            SmsDetailScreen(
+                message = selectedMessage!!,
+                onBack = { selectedMessage = null },
+                onReply = { address ->
+                    composeRecipient = address
+                    selectedMessage = null
+                    showCompose = true
+                }
+            )
+            return
+        }
         showSearch -> { SearchScreen(messages) { showSearch = false }; return }
-        showCompose -> { ComposeSmsScreen { showCompose = false }; return }
+        showCompose -> {
+            ComposeSmsScreen(initialRecipient = composeRecipient) {
+                showCompose = false
+                composeRecipient = ""
+            }
+            return
+        }
     }
 
     Scaffold(
@@ -108,7 +137,7 @@ fun SmartSmsApp() {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (selectedScreen) {
-                0 -> MessagesScreen(messages, isLoading, selectedTab, tabs) { selectedTab = it }
+                0 -> MessagesScreen(messages, isLoading, selectedTab, tabs, { selectedTab = it }) { selectedMessage = it }
                 1 -> StatsScreen(messages)
                 2 -> SettingsScreen()
             }
@@ -138,16 +167,20 @@ fun SmartTopBar(onSearchClick: () -> Unit) {
 }
 
 @Composable
-fun MessagesScreen(messages: List<SmsMessage>, isLoading: Boolean, selectedTab: Int, tabs: List<String>, onTabSelect: (Int) -> Unit) {
+fun MessagesScreen(messages: List<SmsMessage>, isLoading: Boolean, selectedTab: Int, tabs: List<String>, onTabSelect: (Int) -> Unit, onMessageClick: (SmsMessage) -> Unit) {
     Column(modifier = Modifier.fillMaxSize().background(BackgroundDark)) {
         CategoryTabs(tabs, selectedTab, onTabSelect)
         StatsRow(messages)
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PrimaryColor)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = PrimaryColor)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Inapakia SMS...", color = TextSecondary, fontSize = 12.sp)
+                }
             }
         } else {
-            MessagesList(messages, selectedTab)
+            MessagesList(messages, selectedTab, onMessageClick)
         }
     }
 }
@@ -186,7 +219,7 @@ fun StatCard(label: String, value: String, color: Color, modifier: Modifier) {
 }
 
 @Composable
-fun MessagesList(messages: List<SmsMessage>, selectedTab: Int) {
+fun MessagesList(messages: List<SmsMessage>, selectedTab: Int, onMessageClick: (SmsMessage) -> Unit) {
     val filtered = when (selectedTab) {
         0 -> messages
         1 -> messages.filter { it.category == SmsCategory.PERSONAL }
@@ -197,12 +230,12 @@ fun MessagesList(messages: List<SmsMessage>, selectedTab: Int) {
         else -> messages
     }
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(filtered) { message -> MessageCard(message) }
+        items(filtered) { message -> MessageCard(message, onMessageClick) }
     }
 }
 
 @Composable
-fun MessageCard(message: SmsMessage) {
+fun MessageCard(message: SmsMessage, onClick: (SmsMessage) -> Unit) {
     val categoryColor = when (message.category) {
         SmsCategory.BANK -> BankColor
         SmsCategory.OTP -> OtpColor
@@ -217,7 +250,11 @@ fun MessageCard(message: SmsMessage) {
         SmsCategory.ADS -> "📢 Ads"
         SmsCategory.PERSONAL -> "👤 Personal"
     }
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = CardDark)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onClick(message) },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardDark)
+    ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(categoryColor.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
                 Text(message.address.take(1).uppercase(), color = categoryColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -240,23 +277,8 @@ fun MessageCard(message: SmsMessage) {
 @Composable
 fun SmartBottomBar(selected: Int, onSelect: (Int) -> Unit) {
     NavigationBar(containerColor = SurfaceDark) {
-        NavigationBarItem(
-            selected = selected == 0, onClick = { onSelect(0) },
-            icon = { Icon(Icons.Default.Message, contentDescription = "Messages") },
-            label = { Text("Messages") },
-            colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary)
-        )
-        NavigationBarItem(
-            selected = selected == 1, onClick = { onSelect(1) },
-            icon = { Icon(Icons.Default.BarChart, contentDescription = "Stats") },
-            label = { Text("Stats") },
-            colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary)
-        )
-        NavigationBarItem(
-            selected = selected == 2, onClick = { onSelect(2) },
-            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-            label = { Text("Settings") },
-            colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary)
-        )
+        NavigationBarItem(selected = selected == 0, onClick = { onSelect(0) }, icon = { Icon(Icons.Default.Message, contentDescription = "Messages") }, label = { Text("Messages") }, colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary))
+        NavigationBarItem(selected = selected == 1, onClick = { onSelect(1) }, icon = { Icon(Icons.Default.BarChart, contentDescription = "Stats") }, label = { Text("Stats") }, colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary))
+        NavigationBarItem(selected = selected == 2, onClick = { onSelect(2) }, icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") }, label = { Text("Settings") }, colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryColor, selectedTextColor = PrimaryColor, unselectedIconColor = TextSecondary))
     }
 }
