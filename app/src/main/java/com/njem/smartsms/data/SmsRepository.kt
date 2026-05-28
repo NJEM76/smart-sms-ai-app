@@ -3,6 +3,7 @@ package com.njem.smartsms.data
 import android.content.Context
 import android.provider.ContactsContract
 import android.provider.Telephony
+import com.njem.smartsms.data.model.Conversation
 import com.njem.smartsms.data.model.SmsCategory
 import com.njem.smartsms.data.model.SmsMessage
 
@@ -52,7 +53,8 @@ class SmsRepository(private val context: Context) {
                     Telephony.Sms.ADDRESS,
                     Telephony.Sms.BODY,
                     Telephony.Sms.DATE,
-                    Telephony.Sms.READ
+                    Telephony.Sms.READ,
+                    Telephony.Sms.TYPE
                 ),
                 null, null,
                 "${Telephony.Sms.DATE} DESC"
@@ -83,6 +85,24 @@ class SmsRepository(private val context: Context) {
         return messages
     }
 
+    fun getConversations(): List<Conversation> {
+        val messages = getAllSms()
+        val grouped = messages.groupBy { it.address }
+        return grouped.map { (address, msgs) ->
+            val sorted = msgs.sortedByDescending { it.date }
+            val unread = msgs.count { !it.isRead }
+            Conversation(
+                address = address,
+                displayName = address,
+                lastMessage = sorted.first().body,
+                lastDate = sorted.first().date,
+                unreadCount = unread,
+                category = sorted.first().category,
+                messages = sorted
+            )
+        }.sortedByDescending { it.lastDate }
+    }
+
     private fun categorize(body: String, address: String): SmsCategory {
         val lower = body.lowercase()
         return when {
@@ -91,7 +111,7 @@ class SmsRepository(private val context: Context) {
             lower.contains("verify") || lower.contains("uthibitisho") ||
             lower.contains("nambari yako")) -> SmsCategory.OTP
 
-            lower.contains(Regex("(mpesa|tigo|airtel money|benki|bank|balance|tsh|tshs|credited|debited|transfer|imetumwa|umelipa|umelipwa)")) ->
+            lower.contains(Regex("(mpesa|tigo|airtel money|benki|bank|balance|tsh|tshs|credited|debited|transfer|imetumwa|umelipa|umelipwa|selcom|songesha)")) ->
             SmsCategory.BANK
 
             lower.contains(Regex("(winner|won|prize|umeshinda|zawadi|free|promo)")) ->
