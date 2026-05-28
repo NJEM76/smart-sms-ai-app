@@ -1,10 +1,15 @@
 package com.njem.smartsms
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -75,24 +80,46 @@ fun SmartSmsApp() {
     val tabs = listOf("All", "Personal", "Bank", "OTP", "Ads", "Spam")
     var messages by remember { mutableStateOf<List<SmsMessage>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var refreshTrigger by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    fun loadMessages() {
+        isLoading = true
+    }
+
+    LaunchedEffect(refreshTrigger) {
         withContext(Dispatchers.IO) {
             val repo = SmsRepository(context)
             val hasSmsPermission = ContextCompat.checkSelfPermission(
                 context, Manifest.permission.READ_SMS
             ) == PackageManager.PERMISSION_GRANTED
             val loaded = if (hasSmsPermission) repo.getAllSms() else listOf(
-                SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa. Akaunti yako: TZS 234,500", System.currentTimeMillis(), false, SmsCategory.BANK),
+                SmsMessage(1, "M-PESA", "TZS 50,000 imetumwa.", System.currentTimeMillis(), false, SmsCategory.BANK),
                 SmsMessage(2, "AIRTEL", "Nambari yako ya uthibitisho ni 847291.", System.currentTimeMillis() - 3600000, true, SmsCategory.OTP),
-                SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi leo jioni?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL),
-                SmsMessage(4, "VODACOM", "Pata 50% punguzo la data!", System.currentTimeMillis() - 10800000, true, SmsCategory.ADS),
-                SmsMessage(5, "UNKNOWN", "Umeshinda zawadi!", System.currentTimeMillis() - 14400000, true, SmsCategory.SPAM)
+                SmsMessage(3, "John Doe", "Habari! Tutaonana saa ngapi?", System.currentTimeMillis() - 7200000, true, SmsCategory.PERSONAL)
             )
             withContext(Dispatchers.Main) {
                 messages = loaded
                 isLoading = false
             }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                refreshTrigger++
+            }
+        }
+        val filter = IntentFilter("android.provider.Telephony.SMS_RECEIVED")
+        context.registerReceiver(receiver, filter)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
+    BackHandler(enabled = showSearch || showCompose || selectedMessage != null) {
+        when {
+            selectedMessage != null -> selectedMessage = null
+            showSearch -> showSearch = false
+            showCompose -> { showCompose = false; composeRecipient = "" }
         }
     }
 
@@ -114,6 +141,7 @@ fun SmartSmsApp() {
             ComposeSmsScreen(initialRecipient = composeRecipient) {
                 showCompose = false
                 composeRecipient = ""
+                refreshTrigger++
             }
             return
         }
@@ -189,9 +217,7 @@ fun MessagesScreen(messages: List<SmsMessage>, isLoading: Boolean, selectedTab: 
 fun CategoryTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     ScrollableTabRow(selectedTabIndex = selected, containerColor = SurfaceDark, contentColor = PrimaryColor, edgePadding = 8.dp) {
         tabs.forEachIndexed { index, tab ->
-            Tab(
-                selected = selected == index,
-                onClick = { onSelect(index) },
+            Tab(selected = selected == index, onClick = { onSelect(index) },
                 text = { Text(tab, color = if (selected == index) PrimaryColor else TextSecondary, fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal) }
             )
         }
@@ -250,11 +276,7 @@ fun MessageCard(message: SmsMessage, onClick: (SmsMessage) -> Unit) {
         SmsCategory.ADS -> "📢 Ads"
         SmsCategory.PERSONAL -> "👤 Personal"
     }
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { onClick(message) },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardDark)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth().clickable { onClick(message) }, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = CardDark)) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(categoryColor.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
                 Text(message.address.take(1).uppercase(), color = categoryColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
