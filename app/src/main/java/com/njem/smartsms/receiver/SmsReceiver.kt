@@ -10,9 +10,7 @@ import android.os.Build
 import android.provider.Telephony
 import androidx.core.app.NotificationCompat
 import com.njem.smartsms.MainActivity
-import com.njem.smartsms.R
 import com.njem.smartsms.data.model.SmsCategory
-import android.graphics.Color
 
 class SmsReceiver : BroadcastReceiver() {
 
@@ -23,9 +21,8 @@ class SmsReceiver : BroadcastReceiver() {
                 val sender = smsMessage.originatingAddress ?: "Unknown"
                 val body = smsMessage.messageBody ?: ""
                 val category = categorize(body)
-                if (category != SmsCategory.SPAM && category != SmsCategory.ADS) {
-                    showNotification(context, sender, body, category)
-                }
+                showNotification(context, sender, body, category)
+                context.sendBroadcast(Intent("com.njem.smartsms.SMS_RECEIVED"))
             }
         }
     }
@@ -35,14 +32,8 @@ class SmsReceiver : BroadcastReceiver() {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Smart SMS AI",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "SMS Notifications"
+            val channel = NotificationChannel(channelId, "Smart SMS AI", NotificationManager.IMPORTANCE_HIGH).apply {
                 enableLights(true)
-                lightColor = Color.parseColor("#6C63FF")
                 enableVibration(true)
             }
             notificationManager.createNotificationChannel(channel)
@@ -59,8 +50,9 @@ class SmsReceiver : BroadcastReceiver() {
         val emoji = when (category) {
             SmsCategory.BANK -> "💰"
             SmsCategory.OTP -> "🔑"
+            SmsCategory.SPAM -> "🚫"
+            SmsCategory.ADS -> "📢"
             SmsCategory.PERSONAL -> "👤"
-            else -> "📱"
         }
 
         val notification = NotificationCompat.Builder(context, channelId)
@@ -83,16 +75,9 @@ class SmsReceiver : BroadcastReceiver() {
             lower.contains(Regex("\\b\\d{4,8}\\b")) &&
             (lower.contains("code") || lower.contains("otp") ||
             lower.contains("verify") || lower.contains("uthibitisho")) -> SmsCategory.OTP
-
-            lower.contains(Regex("(mpesa|tigo|bank|balance|tsh|tshs|credited|debited|imetumwa)")) ->
-            SmsCategory.BANK
-
-            lower.contains(Regex("(winner|won|umeshinda|zawadi|free|promo)")) ->
-            SmsCategory.SPAM
-
-            lower.contains(Regex("(offer|sale|discount|punguzo|%)")) ->
-            SmsCategory.ADS
-
+            lower.contains(Regex("(mpesa|tigo|bank|balance|tsh|tshs|credited|debited|imetumwa|selcom|songesha)")) -> SmsCategory.BANK
+            lower.contains(Regex("(winner|won|umeshinda|zawadi|free|promo)")) -> SmsCategory.SPAM
+            lower.contains(Regex("(offer|sale|discount|punguzo|%)")) -> SmsCategory.ADS
             else -> SmsCategory.PERSONAL
         }
     }
